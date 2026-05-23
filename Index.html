@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>InvoiceRF - Penjualan</title>
+    <!-- TailwindCSS + Font Awesome + Lucide + Flatpickr + html2canvas + html2pdf -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        
+        // Konfigurasi Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyALAU4ZAKOko3wyDoC3MKbVMuWg56z8itM",
+            authDomain: "invoice-rf.firebaseapp.com",
+            projectId: "invoice-rf",
+            storageBucket: "invoice-rf.firebasestorage.app",
+            messagingSenderId: "86273692896",
+            appId: "1:86273692896:web:d1c9d5146248000c33ac85"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Ekspor ke global window agar dapat digunakan di script inline non-module
+        window.db = db;
+        window.collection = collection;
+        window.doc = doc;
+        window.addDoc = addDoc;
+        window.updateDoc = updateDoc;
+        window.deleteDoc = deleteDoc;
+        window.getDocs = getDocs;
+        window.getDoc = getDoc;
+        window.query = query;
+        window.where = where;
+        window.orderBy = orderBy;
+        window.writeBatch = writeBatch;
+        
+        // Inisialisasi setelah Firebase siap
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Firebase terhubung');
+            if(window.initializeAppData) window.initializeAppData();
+        });
+    </script>
+    <style>
+        /* custom transitions & glassmorphism */
+        .modal-transition {
+            transition: opacity 0.2s ease, visibility 0.2s;
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -12px rgba(0, 0, 0, 0.1);
+        }
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 8px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #c084fc;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans antialiased">
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <!-- Header tab penjualan -->
+    <div class="flex flex-wrap justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-700 to-purple-500 bg-clip-text text-transparent">📋 Penjualan</h1>
+        <button id="btnTambahPelanggan" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-5 rounded-xl shadow-md transition flex items-center gap-2">
+            <i class="fas fa-plus"></i> Tambah Pelanggan
+        </button>
+    </div>
+
+    <!-- Search pelanggan -->
+    <div class="relative mb-6">
+        <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+        <input type="text" id="searchPelanggan" placeholder="Cari nama atau nomor HP..." class="w-full pl-11 pr-4 py-3 rounded-2xl border border-gray-200 shadow-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none transition">
+    </div>
+
+    <!-- Grid Daftar Pelanggan (card) -->
+    <div id="pelangganGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- card akan diisi javascript -->
+    </div>
+</div>
+
+<!-- MODAL TAMBAH PELANGGAN -->
+<div id="modalPelanggan" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 modal-transition hidden">
+    <div class="bg-white rounded-2xl w-full max-w-md mx-4 shadow-2xl transform transition-all p-6">
+        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Tambah Pelanggan Baru</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">ID Pelanggan (Otomatis)</label>
+                <input type="text" id="custId" readonly class="w-full mt-1 p-2 bg-gray-100 rounded-lg border border-gray-200">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Nama Lengkap *</label>
+                <input type="text" id="custName" class="w-full mt-1 p-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">No. HP / WA</label>
+                <input type="text" id="custPhone" class="w-full mt-1 p-2 border border-gray-300 rounded-lg">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Hutang Awal (Rp)</label>
+                <input type="number" id="custHutangAwal" value="0" class="w-full mt-1 p-2 border border-gray-300 rounded-lg">
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button id="batalModalPelanggan" class="px-4 py-2 border rounded-xl text-gray-600 hover:bg-gray-100">Batal</button>
+            <button id="simpanPelangganBtn" class="px-5 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700">Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DETAIL PELANGGAN (transparan overlay, konten panjang) -->
+<div id="modalDetailPelanggan" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 modal-transition hidden overflow-y-auto">
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-5xl w-full shadow-xl p-6 relative">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <div>
+                    <h2 id="detailNama" class="text-2xl font-bold text-gray-800"></h2>
+                    <p id="detailHp" class="text-gray-500"></p>
+                </div>
+                <button id="tutupDetailModal" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <!-- Tabel Invoice -->
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <h3 class="text-lg font-semibold">🧾 Daftar Invoice</h3>
+                    <button id="btnBuatInvoice" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-1"><i class="fas fa-plus"></i> Buat</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-xl shadow-sm border">
+                        <thead class="bg-purple-50">
+                            <tr><th class="p-3 text-left">No. Invoice</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr>
+                        </thead>
+                        <tbody id="tabelInvoiceBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Tabel Akumulasi & Hutang Lainnya -->
+            <div>
+                <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <h3 class="text-lg font-semibold">📊 Transaksi Akumulasi & Hutang Lainnya</h3>
+                    <div class="flex gap-2">
+                        <button class="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm">Bayar</button>
+                        <button class="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-sm">Laporan</button>
+                        <button id="btnTambahHutangLain" class="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-sm">+ Hutang Lain</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-xl shadow-sm border">
+                        <thead class="bg-gray-50"><tr><th>Referensi</th><th>Tanggal</th><th>Total</th><th>Tipe</th><th>Aksi</th></tr></thead>
+                        <tbody id="tabelAkumulasiBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL BUAT INVOICE (popup besar) -->
+<div id="modalInvoice" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 modal-transition hidden overflow-y-auto">
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6">
+            <div class="flex justify-between items-center border-b pb-2 mb-4">
+                <h2 class="text-2xl font-bold text-purple-700">Buat Transaksi Baru</h2>
+                <button id="closeInvoiceModal" class="text-2xl text-gray-500">&times;</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                <div><label>Tanggal</label><input type="date" id="invoiceTanggal" class="border p-2 rounded w-full"></div>
+                <div><label>Metode</label><select id="invoiceMetode" class="border p-2 rounded w-full"><option value="Per Invoice">Per Invoice</option><option value="Akumulasi">Akumulasi</option></select></div>
+            </div>
+            <!-- Tabel item dinamis -->
+            <div class="overflow-x-auto mb-4">
+                <table class="w-full text-sm border" id="itemTable">
+                    <thead class="bg-purple-100"><tr><th class="p-2">Nama Barang</th><th>Qty</th><th>Harga</th><th>Grosir</th><th>Disc/Unit</th><th>Sub Total</th><th></th></tr></thead>
+                    <tbody id="itemTableBody"></tbody>
+                </table>
+                <button id="tambahBarisItem" class="mt-2 text-purple-600 text-sm flex items-center gap-1"><i class="fas fa-plus-circle"></i> Tambah Barang</button>
+            </div>
+            <div class="text-right text-xl font-bold border-t pt-3">Total: Rp <span id="grandTotalInvoice">0</span></div>
+            <div class="flex justify-end gap-3 mt-5">
+                <button id="batalInvoiceBtn" class="px-5 py-2 border rounded-xl">Batal</button>
+                <button id="simpanInvoiceBtn" class="px-6 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700">Simpan Invoice</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Global variables
+    let currentPelangganId = null; // untuk detail yang sedang dibuka
+    let semuaPelanggan = [];
+    let daftarBarang = []; // akan diisi dari firestore: barang
+    
+    // Helper format rupiah
+    function formatRupiah(angka) {
+        return new Intl.NumberFormat('id-ID').format(angka);
+    }
+    
+    // generate ID Pelanggan otomatis
+    async function generateCustomerId() {
+        const q = query(collection(window.db, "pelanggan"), orderBy("idPelanggan", "desc"));
+        const snapshot = await getDocs(q);
+        let max = 0;
+        snapshot.forEach(doc => {
+            let idStr = doc.data().idPelanggan;
+            let num = parseInt(idStr.replace('CUST',''));
+            if(!isNaN(num) && num > max) max = num;
+        });
+        let next = max + 1;
+        return `CUST${String(next).padStart(3,'0')}`;
+    }
+    
+    // Load Pelanggan dari Firestore dan render card
+    async function loadPelanggan() {
+        const snap = await getDocs(collection(window.db, "pelanggan"));
+        semuaPelanggan = [];
+        snap.forEach(docSnap => {
+            semuaPelanggan.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        renderCardPelanggan(semuaPelanggan);
+    }
+    
+    // Hitung total hutang & total pembelian (dari invoice & hutang awal & lain)
+    async function hitungTotalPelanggan(pelangganId) {
+        // invoice collection
+        const invoiceQuery = query(collection(window.db, "invoices"), where("pelangganId", "==", pelangganId));
+        const invSnap = await getDocs(invoiceQuery);
+        let totalInvoice = 0;
+        let totalBelumLunas = 0;
+        invSnap.forEach(doc => {
+            let inv = doc.data();
+            totalInvoice += inv.total || 0;
+            if(inv.status !== 'Lunas') totalBelumLunas += inv.total || 0;
+        });
+        // hutang awal dari pelanggan
+        const pelDoc = await getDoc(doc(window.db, "pelanggan", pelangganId));
+        let hutangAwal = pelDoc.exists() ? (pelDoc.data().hutangAwal || 0) : 0;
+        // hutang lain collection
+        const hutangLainQuery = query(collection(window.db, "hutangLain"), where("pelangganId", "==", pelangganId));
+        const hlSnap = await getDocs(hutangLainQuery);
+        let totalHutangLain = 0;
+        hlSnap.forEach(d => { totalHutangLain += d.data().jumlah || 0; });
+        // pembayaran (belum ada fitur bayar full, tetapi yang lunas mengurangi)
+        const totalHutang = hutangAwal + totalBelumLunas + totalHutangLain;
+        const totalPembelian = totalInvoice;
+        return { totalHutang, totalPembelian };
+    }
+    
+    async function renderCardPelanggan(filtered) {
+        const grid = document.getElementById('pelangganGrid');
+        grid.innerHTML = '';
+        for(let pel of filtered) {
+            const { totalHutang, totalPembelian } = await hitungTotalPelanggan(pel.id);
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-2xl shadow-md p-5 border border-purple-100 card-hover transition-all cursor-pointer relative';
+            card.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-xl">${pel.nama.charAt(0).toUpperCase()}</div>
+                    <div class="flex gap-2">
+                        <button class="editPelBtn text-gray-500 hover:text-purple-600" data-id="${pel.id}"><i class="fas fa-edit"></i></button>
+                        <button class="hapusPelBtn text-gray-500 hover:text-red-600" data-id="${pel.id}"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h3 class="font-bold text-lg">${escapeHtml(pel.nama)}</h3>
+                    <p class="text-gray-500 text-sm"><i class="fab fa-whatsapp"></i> ${pel.noHp || '-'}</p>
+                    <div class="mt-2 grid grid-cols-2 gap-2 text-sm">
+                        <div><span class="text-gray-500">Total Belanja:</span><br><span class="font-semibold">Rp ${formatRupiah(totalPembelian)}</span></div>
+                        <div><span class="text-gray-500">Total Hutang:</span><br><span class="font-semibold text-rose-600">Rp ${formatRupiah(totalHutang)}</span></div>
+                    </div>
+                </div>
+            `;
+            card.addEventListener('click', (e) => {
+                if(e.target.closest('.editPelBtn') || e.target.closest('.hapusPelBtn')) return;
+                showDetailPelanggan(pel.id);
+            });
+            card.querySelector('.editPelBtn').addEventListener('click', (e) => { e.stopPropagation(); editPelanggan(pel); });
+            card.querySelector('.hapusPelBtn').addEventListener('click', (e) => { e.stopPropagation(); hapusPelanggan(pel.id); });
+            grid.appendChild(card);
+        }
+    }
+    
+    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;});}
+    
+    async function editPelanggan(pel) {
+        document.getElementById('custId').value = pel.idPelanggan;
+        document.getElementById('custName').value = pel.nama;
+        document.getElementById('custPhone').value = pel.noHp || '';
+        document.getElementById('custHutangAwal').value = pel.hutangAwal || 0;
+        document.getElementById('modalPelanggan').classList.remove('hidden');
+        // override simpan jadi update
+        const simpan = document.getElementById('simpanPelangganBtn');
+        const newSimpan = simpan.cloneNode(true);
+        simpan.parentNode.replaceChild(newSimpan, simpan);
+        newSimpan.innerText = 'Update';
+        newSimpan.onclick = async () => {
+            const nama = document.getElementById('custName').value.trim();
+            if(!nama) { alert('Nama wajib diisi'); return; }
+            await updateDoc(doc(window.db, "pelanggan", pel.id), {
+                nama: nama,
+                noHp: document.getElementById('custPhone').value,
+                hutangAwal: parseInt(document.getElementById('custHutangAwal').value) || 0
+            });
+            closeModalPelanggan();
+            loadPelanggan();
+        };
+        document.getElementById('batalModalPelanggan').onclick = closeModalPelanggan;
+    }
+    
+    async function hapusPelanggan(id) {
+        if(confirm('Hapus pelanggan? Semua invoice & hutang juga akan dihapus')) {
+            const batch = writeBatch(window.db);
+            const invSnap = await getDocs(query(collection(window.db, "invoices"), where("pelangganId", "==", id)));
+            invSnap.forEach(d => batch.delete(d.ref));
+            const hutangSnap = await getDocs(query(collection(window.db, "hutangLain"), where("pelangganId", "==", id)));
+            hutangSnap.forEach(d => batch.delete(d.ref));
+            batch.delete(doc(window.db, "pelanggan", id));
+            await batch.commit();
+            loadPelanggan();
+        }
+    }
+    
+    async function showDetailPelanggan(pelId) {
+        currentPelangganId = pelId;
+        const pelDoc = await getDoc(doc(window.db, "pelanggan", pelId));
+        const dataPel = pelDoc.data();
+        document.getElementById('detailNama').innerText = dataPel.nama;
+        document.getElementById('detailHp').innerHTML = `<i class="fab fa-whatsapp"></i> ${dataPel.noHp || '-'}`;
+        // load invoices
+        const invQuery = query(collection(window.db, "invoices"), where("pelangganId", "==", pelId), orderBy("tanggal", "desc"));
+        const invSnap = await getDocs(invQuery);
+        const tbodyInv = document.getElementById('tabelInvoiceBody');
+        tbodyInv.innerHTML = '';
+        for(let docInv of invSnap.docs){
+            let inv = docInv.data();
+            let row = `<tr class="border-b"><td class="p-2">${inv.noInvoice}</td><td>${inv.tanggal}</td><td>Rp ${formatRupiah(inv.total)}</td><td><span class="px-2 py-1 rounded-full text-xs ${inv.status === 'Lunas' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${inv.status}</span></td>
+            <td class="flex gap-2"><button class="cetakInvBtn text-blue-600" data-id="${docInv.id}"><i class="fas fa-print"></i></button>
+            <button class="editInvBtn text-amber-600" data-id="${docInv.id}"><i class="fas fa-edit"></i></button>
+            <button class="hapusInvBtn text-red-600" data-id="${docInv.id}"><i class="fas fa-trash"></i></button>
+            ${inv.status !== 'Lunas' ? `<button class="lunasInvBtn text-green-600" data-id="${docInv.id}"><i class="fas fa-check-circle"></i></button>` : ''}</td></tr>`;
+            tbodyInv.insertAdjacentHTML('beforeend', row);
+        }
+        // attach event after render invoice
+        document.querySelectorAll('.cetakInvBtn').forEach(btn => btn.onclick = () => cetakInvoice(btn.dataset.id));
+        document.querySelectorAll('.hapusInvBtn').forEach(btn => btn.onclick = () => hapusInvoice(btn.dataset.id));
+        document.querySelectorAll('.lunasInvBtn').forEach(btn => btn.onclick = () => lunasiInvoice(btn.dataset.id));
+        // load akumulasi dan hutang lainnya
+        const hutangQuery = query(collection(window.db, "hutangLain"), where("pelangganId", "==", pelId), orderBy("tanggal", "desc"));
+        const hutangSnap = await getDocs(hutangQuery);
+        const tbodyAkum = document.getElementById('tabelAkumulasiBody');
+        tbodyAkum.innerHTML = '';
+        hutangSnap.forEach(docH => {
+            let item = docH.data();
+            tbodyAkum.innerHTML += `<tr><td>${item.referensi}</td><td>${item.tanggal}</td><td>Rp ${formatRupiah(item.jumlah)}</td><td>Hutang Lain</td><td><button class="hapusHutangBtn text-red-500" data-id="${docH.id}"><i class="fas fa-trash"></i></button></td></tr>`;
+        });
+        document.querySelectorAll('.hapusHutangBtn').forEach(btn => btn.onclick = async () => { await deleteDoc(doc(window.db, "hutangLain", btn.dataset.id)); showDetailPelanggan(pelId); });
+        document.getElementById('modalDetailPelanggan').classList.remove('hidden');
+    }
+    
+    async function lunasiInvoice(invId) {
+        await updateDoc(doc(window.db, "invoices", invId), { status: "Lunas" });
+        showDetailPelanggan(currentPelangganId);
+    }
+    async function hapusInvoice(invId) {
+        if(confirm('Hapus invoice?')){ await deleteDoc(doc(window.db, "invoices", invId)); showDetailPelanggan(currentPelangganId); }
+    }
+    async function cetakInvoice(invId) {
+        // preview sederhana cetak invoice (popup)
+        const invDoc = await getDoc(doc(window.db, "invoices", invId));
+        if(!invDoc.exists()) return;
+        const inv = invDoc.data();
+        const pelDoc = await getDoc(doc(window.db, "pelanggan", inv.pelangganId));
+        const namaPel = pelDoc.exists() ? pelDoc.data().nama : '-';
+        let htmlContent = `<div id="invoicePreview" style="padding:20px; font-family:sans-serif;"><h2>INVOICE</h2><p>No: ${inv.noInvoice}</p><p>Tanggal: ${inv.tanggal}</p><p>Pelanggan: ${namaPel}</p><hr><table border=1 width=100%><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>Disc</th><th>Subtotal</th></tr>`;
+        inv.items.forEach(it => { htmlContent += `<tr><td>${it.nama}</td><td>${it.qty}</td><td>${it.harga}</td><td>${it.disc}</td><td>${it.subtotal}</td></tr>`; });
+        htmlContent += `</table><h3>Total: ${formatRupiah(inv.total)}</h3><p>Status: ${inv.status}</p></div>`;
+        let win = window.open();
+        win.document.write(htmlContent);
+        win.document.close();
+    }
+    
+    // Setup modal tambah pelanggan async
+    async function bukaModalTambahPelanggan() {
+        const newId = await generateCustomerId();
+        document.getElementById('custId').value = newId;
+        document.getElementById('custName').value = '';
+        document.getElementById('custPhone').value = '';
+        document.getElementById('custHutangAwal').value = '0';
+        document.getElementById('modalPelanggan').classList.remove('hidden');
+        const simpanBtn = document.getElementById('simpanPelangganBtn');
+        simpanBtn.innerText = 'Simpan';
+        simpanBtn.onclick = async () => {
+            const nama = document.getElementById('custName').value.trim();
+            if(!nama) { alert('Nama wajib diisi'); return; }
+            const idPel = document.getElementById('custId').value;
+            await addDoc(collection(window.db, "pelanggan"), {
+                idPelanggan: idPel,
+                nama: nama,
+                noHp: document.getElementById('custPhone').value,
+                hutangAwal: parseInt(document.getElementById('custHutangAwal').value) || 0
+            });
+            closeModalPelanggan();
+            loadPelanggan();
+        };
+    }
+    function closeModalPelanggan() { document.getElementById('modalPelanggan').classList.add('hidden'); }
+    
+    // Barang autocomplete & harga grosir
+    async function ambilBarang() {
+        const snap = await getDocs(collection(window.db, "barang"));
+        daftarBarang = [];
+        snap.forEach(d => daftarBarang.push({ id: d.id, ...d.data() }));
+        if(daftarBarang.length === 0) {
+            // seeding sample barang
+            await addDoc(collection(window.db, "barang"), { nama: "Beras Premium", harga: 15000, hargaGrosir: 14000, stok: 100 });
+            await addDoc(collection(window.db, "barang"), { nama: "Minyak Goreng", harga: 20000, hargaGrosir: 19000, stok: 50 });
+            await addDoc(collection(window.db, "barang"), { nama: "Gula Pasir", harga: 13000, hargaGrosir: 12500, stok: 80 });
+            await ambilBarang();
+        }
+    }
+    
+    let itemRows = 0;
+    function renderItemRows() {
+        const tbody = document.getElementById('itemTableBody');
+        tbody.innerHTML = '';
+        // ambil semua row dari array internal
+        if(!window.invoiceItems) window.invoiceItems = [{ id: Date.now(), nama: '', qty: 1, harga: 0, grosir: false, disc: 0 }];
+        window.invoiceItems.forEach((it, idx) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td><input type="text" class="namaBarangAuto border p-1 rounded" data-idx="${idx}" value="${it.nama}" placeholder="Cari barang"></td>
+            <td><input type="number" class="qtyItem border p-1 w-20" data-idx="${idx}" value="${it.qty}"></td>
+            <td><input type="number" class="hargaItem border p-1 w-28" data-idx="${idx}" value="${it.harga}"></td>
+            <td><input type="checkbox" class="grosirCheck" data-idx="${idx}" ${it.grosir ? 'checked' : ''}></td>
+            <td><input type="number" class="discItem border p-1 w-24" data-idx="${idx}" value="${it.disc}"></td>
+            <td class="subtotalTd" data-idx="${idx}">0</td>
+            <td><button class="hapusRowBtn text-red-500" data-idx="${idx}"><i class="fas fa-trash"></i></button></td>`;
+            tbody.appendChild(row);
+            attachAutocomplete(row.querySelector('.namaBarangAuto'), idx);
+        });
+        updateAllSubtotal();
+    }
+    
+    function attachAutocomplete(inputEl, idx) {
+        inputEl.addEventListener('input', (e) => {
+            const val = e.target.value.toLowerCase();
+            const suggestions = daftarBarang.filter(b => b.nama.toLowerCase().includes(val));
+            // simple datalist
+            let datalistId = `datalist-${idx}`;
+            let datalist = document.getElementById(datalistId);
+            if(!datalist) { datalist = document.createElement('datalist'); datalist.id = datalistId; inputEl.setAttribute('list', datalistId); document.body.appendChild(datalist); }
+            datalist.innerHTML = '';
+            suggestions.forEach(s => { let opt = document.createElement('option'); opt.value = s.nama; opt.dataset.harga = s.harga; opt.dataset.hargaGrosir = s.hargaGrosir; datalist.appendChild(opt); });
+            inputEl.addEventListener('change', () => {
+                let barang = suggestions.find(b => b.nama === inputEl.value);
+                if(barang) {
+                    window.invoiceItems[idx].nama = barang.nama;
+                    window.invoiceItems[idx].harga = barang.harga;
+                    let grosirCheck = document.querySelector(`.grosirCheck[data-idx='${idx}']`);
+                    if(grosirCheck && grosirCheck.checked) window.invoiceItems[idx].harga = barang.hargaGrosir || barang.harga;
+                    document.querySelector(`.hargaItem[data-idx='${idx}']`).value = window.invoiceItems[idx].harga;
+                    updateAllSubtotal();
+                }
+            });
+        });
+    }
+    
+    function updateAllSubtotal() {
+        let grand = 0;
+        for(let i=0; i<window.invoiceItems.length; i++) {
+            let it = window.invoiceItems[i];
+            let qty = parseFloat(document.querySelector(`.qtyItem[data-idx='${i}']`)?.value) || 0;
+            let harga = parseFloat(document.querySelector(`.hargaItem[data-idx='${i}']`)?.value) || 0;
+            let disc = parseFloat(document.querySelector(`.discItem[data-idx='${i}']`)?.value) || 0;
+            let grosirCheck = document.querySelector(`.grosirCheck[data-idx='${i}']`);
+            if(grosirCheck && grosirCheck.checked) {
+                let barang = daftarBarang.find(b => b.nama === it.nama);
+                if(barang && barang.hargaGrosir) harga = barang.hargaGrosir;
+                document.querySelector(`.hargaItem[data-idx='${i}']`).value = harga;
+            }
+            let subtotal = (qty * harga) - (qty * disc);
+            if(subtotal<0) subtotal=0;
+            document.querySelector(`.subtotalTd[data-idx='${i}']`).innerText = formatRupiah(subtotal);
+            grand += subtotal;
+            it.qty = qty; it.harga = harga; it.disc = disc; it.grosir = grosirCheck?.checked || false;
+        }
+        document.getElementById('grandTotalInvoice').innerText = formatRupiah(grand);
+        window.currentGrand = grand;
+    }
+    
+    // Setup event + Inisialisasi
+    window.initializeAppData = async () => {
+        await ambilBarang();
+        await loadPelanggan();
+        document.getElementById('btnTambahPelanggan').onclick = bukaModalTambahPelanggan;
+        document.getElementById('batalModalPelanggan').onclick = closeModalPelanggan;
+        document.getElementById('searchPelanggan').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = semuaPelanggan.filter(p => p.nama.toLowerCase().includes(term) || (p.noHp && p.noHp.includes(term)));
+            renderCardPelanggan(filtered);
+        });
+        document.getElementById('tutupDetailModal').onclick = () => document.getElementById('modalDetailPelanggan').classList.add('hidden');
+        document.getElementById('btnBuatInvoice').onclick = () => {
+            document.getElementById('invoiceTanggal').value = new Date().toISOString().slice(0,10);
+            window.invoiceItems = [{ id: Date.now(), nama: '', qty: 1, harga: 0, grosir: false, disc: 0 }];
+            renderItemRows();
+            document.getElementById('modalInvoice').classList.remove('hidden');
+        };
+        document.getElementById('closeInvoiceModal').onclick = () => document.getElementById('modalInvoice').classList.add('hidden');
+        document.getElementById('batalInvoiceBtn').onclick = () => document.getElementById('modalInvoice').classList.add('hidden');
+        document.getElementById('tambahBarisItem').onclick = () => { window.invoiceItems.push({ id: Date.now(), nama: '', qty: 1, harga: 0, grosir: false, disc: 0 }); renderItemRows(); };
+        document.getElementById('simpanInvoiceBtn').onclick = async () => {
+            if(!currentPelangganId) return alert('Pilih pelanggan terlebih dahulu');
+            let itemsFinal = [];
+            for(let i=0;i<window.invoiceItems.length;i++){
+                let it = window.invoiceItems[i];
+                if(!it.nama) continue;
+                let qty = parseFloat(document.querySelector(`.qtyItem[data-idx='${i}']`).value);
+                let harga = parseFloat(document.querySelector(`.hargaItem[data-idx='${i}']`).value);
+                let disc = parseFloat(document.querySelector(`.discItem[data-idx='${i}']`).value);
+                let subtotal = (qty*harga) - (qty*disc);
+                itemsFinal.push({ nama: it.nama, qty, harga, disc, subtotal });
+            }
+            if(itemsFinal.length===0) return alert('Minimal satu barang');
+            const noInv = "INV"+Date.now();
+            await addDoc(collection(window.db, "invoices"), {
+                noInvoice: noInv,
+                tanggal: document.getElementById('invoiceTanggal').value,
+                pelangganId: currentPelangganId,
+                metode: document.getElementById('invoiceMetode').value,
+                items: itemsFinal,
+                total: window.currentGrand,
+                status: 'Belum'
+            });
+            document.getElementById('modalInvoice').classList.add('hidden');
+            showDetailPelanggan(currentPelangganId);
+        };
+        document.getElementById('btnTambahHutangLain').onclick = async () => {
+            let jumlah = prompt('Jumlah Hutang Lain (Rp)');
+            if(jumlah && !isNaN(parseFloat(jumlah))) {
+                await addDoc(collection(window.db, "hutangLain"), { pelangganId: currentPelangganId, jumlah: parseFloat(jumlah), tanggal: new Date().toISOString().slice(0,10), referensi: `HL-${Date.now()}` });
+                showDetailPelanggan(currentPelangganId);
+            }
+        };
+        // event listener untuk update realtime row
+        document.getElementById('itemTableBody')?.addEventListener('input', (e) => { updateAllSubtotal(); });
+    };
+    
+    // Jika firebase module sudah load panggil init
+    if(window.db) window.initializeAppData();
+    else window.addEventListener('DOMContentLoaded', () => { if(window.initializeAppData) window.initializeAppData(); });
+</script>
+</body>
+</html>
